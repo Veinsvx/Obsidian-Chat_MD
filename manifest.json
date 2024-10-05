@@ -1,0 +1,9 @@
+{
+	"id": "chatgpt-md2",
+	"name": "ChatGPT MD 修改版",
+	"version": "0.1.0",
+	"minAppVersion": "0.1.0",
+	"description": "https://github.com/bramses/chatgpt-md 原项目半年没更新，并且不支持识图，根据个人使用中觉得不便之处，对这个老哥的项目进行修改",
+	"author": "veinsvx",
+	"isDesktopOnly": false
+}

@@ -1,0 +1,17 @@
+{
+  "apiKey": "default",
+  "defaultChatFrontmatter": "---\nsystem_commands: ['I am a helpful assistant.']\ntemperature: 0\ntop_p: 1\nmax_tokens: 4000\npresence_penalty: 1\nfrequency_penalty: 1\nstream: true\nstop: null\nn: 1\nmodel: gpt-4o\n---",
+  "stream": true,
+  "chatTemplateFolder": "ChatGPT_MD/templates",
+  "chatFolder": "ChatGPT_MD/chats",
+  "generateAtCursor": false,
+  "autoInferTitle": false,
+  "dateFormat": "YYYYMMDDhhmmss",
+  "headingLevel": 0,
+  "inferTitleLanguage": "Chinese",
+  "baseURL": "https://xxx.xxx.xxx/v1/chat/completions",
+  "modelName": "gpt-4o",
+  "max_tokens": 4000,
+  "temperature": 0.7,
+  "top_p": 0.5
+}
