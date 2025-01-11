@@ -235,17 +235,31 @@ var unfinishedCodeBlock = (txt) => {
     console.log("[ChatGPT MD] unclosed code block detected");
   return matcher.length % 2 !== 0;
 };
-var writeInferredTitleToEditor = async (vault, view, fileManager, chatFolder, title) => {
+var writeInferredTitleToEditor = async (vault, view, fileManager, chatFolder, title, useOriginalFileName=true) => {
   try {
     const file = view.file;
     const folder = chatFolder.replace(/\/$/, "");
-    let newFileName = `${folder}/${title}.md`;
-    let i = 1;
-    while (await vault.adapter.exists(newFileName)) {
-      newFileName = `${folder}/${title} (${i}).md`;
-      i++;
+    let newFileName;
+    
+    if (useOriginalFileName) {
+      const originalFileName = file.name.replace(/\.[^/.]+$/, ""); // 移除文件扩展名
+      newFileName = `${folder}/${originalFileName}_${title}.md`; // 添加扩展
+      let i = 1;
+      while (await vault.adapter.exists(newFileName)) {
+        newFileName = `${folder}/${originalFileName}_${title}(${i}).md`; // 添加扩展名
+        i++;
+      }
+    } else {
+      newFileName = `${folder}/${title}.md`;
+      let i = 1;
+      while (await vault.adapter.exists(newFileName)) {
+        newFileName = `${folder}/${title} (${i}).md`;
+        i++;
+      }
     }
-    fileManager.renameFile(file, newFileName);
+
+    const newFilePath = file.path.replace(file.name, newFileName.split('/').pop());
+    await fileManager.renameFile(file, newFilePath);
   } catch (err) {
     new import_obsidian.Notice("[ChatGPT MD] Error writing inferred title to editor");
     console.log("[ChatGPT MD] Error writing inferred title to editor", err);
@@ -268,6 +282,70 @@ var createFolderModal = async (app2, vault, folderName, folderPath) => {
   }
   return result;
 };
+
+// 获取附件文件夹路径
+async function getAttachmentFolderPath(app) {
+  // 获取 Obsidian 设置中的附件文件夹路径
+  const basePath = app.vault.config.attachmentFolderPath;
+  
+  // 如果设置为根目录或未设置，返回空字符串
+  if (!basePath || basePath === '/' || basePath === './') {
+    return '';
+  }
+  
+  return basePath.startsWith('/') ? basePath.slice(1) : basePath;
+}
+
+// 解析图片路径
+async function resolveImagePath(app, imagePath, sourceFile) {
+  try {
+    // 移除 [[]] 或 ![]() 语法
+    let cleanPath = imagePath.replace(/(\[\[|\]\]|\(!|\))/g, '');
+    cleanPath = cleanPath.split('#')[0].trim(); // 移除锚点
+    
+    // 获取附件文件夹路径
+    const attachmentFolder = await getAttachmentFolderPath(app);
+    
+    // 尝试的路径顺序：
+    // 1. 附件文件夹中的路径
+    // 2. 绝对路径
+    // 3. 相对于当前笔记的路径
+    const pathsToTry = [];
+    
+    // 1. 附件文件夹路径
+    if (attachmentFolder) {
+      pathsToTry.push(`${attachmentFolder}/${cleanPath}`);
+    }
+    
+    // 2. 绝对路径（如果以/开头）
+    if (cleanPath.startsWith('/')) {
+      pathsToTry.push(cleanPath.slice(1));
+    }
+    
+    // 3. 相对路径
+    if (sourceFile && sourceFile.parent) {
+      pathsToTry.push(`${sourceFile.parent.path}/${cleanPath}`);
+    }
+    
+    // 依次尝试所有可能的路径
+    for (const path of pathsToTry) {
+      const imageFile = app.vault.getAbstractFileByPath(path);
+      if (imageFile) {
+        return path;
+      }
+    }
+    
+    console.log(`Image not found in any location: ${cleanPath}`);
+    return null;
+
+  } catch (error) {
+    console.error(`Error resolving image path: ${imagePath}`, error);
+    return null;
+  }
+}
+
+
+
 var FolderCreationModal = class extends import_obsidian.Modal {
   constructor(app2, folderName, folderPath) {
     super(app2);
@@ -309,6 +387,10 @@ var FolderCreationModal = class extends import_obsidian.Modal {
     contentEl.empty();
   }
 };
+
+
+
+
 
 // stream.ts
 var StreamManager = class {
@@ -455,7 +537,7 @@ ${headingPrefix}role::assistant
 // main.ts
 var DEFAULT_SETTINGS = {
   apiKey: "default",
-  defaultChatFrontmatter: "---\nsystem_commands: ['I am a helpful assistant.']\ntemperature: 0\ntop_p: 1\nmax_tokens: 4000\npresence_penalty: 1\nfrequency_penalty: 1\nstream: true\nstop: null\nn: 1\nmodel: gpt-4o\n---",
+  defaultChatFrontmatter: "---\nsystem_commands: ['I am a helpful assistant.']\ntemperature: 0\ntop_p: 1\nmax_tokens: 4000\npresence_penalty: 1\nfrequency_penalty: 1\nstream: true\nstop: null\nn: 1\nmodel: gpt-4-coco\n---",
   stream: true,
   chatTemplateFolder: "ChatGPT_MD/templates",
   chatFolder: "ChatGPT_MD/chats",
@@ -787,6 +869,11 @@ ${this.getHeadingPrefix()}role::user
     const paddedSecond = second.toString().padStart(2, "0");
     return format.replace("YYYY", year.toString()).replace("MM", paddedMonth).replace("DD", paddedDay).replace("hh", paddedHour).replace("mm", paddedMinute).replace("ss", paddedSecond);
   }
+
+
+
+  
+
   async onload() {
     const statusBarItemEl = this.addStatusBarItem();
     await this.loadSettings();
@@ -815,7 +902,7 @@ ${this.getHeadingPrefix()}role::user
         // 将转换后的图片封装到 JSON 文件中，并添加到 messagesWithRoleAndMessage 数组中。
         // 新增代码开始
         const imageRegex = /!\[\[([^\]]+\.(jpg|jpeg|png|gif|bmp))\]\]|!\[.*?\]\((.*?\.(jpg|jpeg|png|gif|bmp))\)/gi;
-        const { normalizePath } = require('obsidian');
+        const { normalizePath, resolveSubpath, parseLinktext } = require('obsidian');
         const mimeTypes = {
           jpg: 'image/jpeg',
           jpeg: 'image/jpeg',
@@ -828,37 +915,46 @@ ${this.getHeadingPrefix()}role::user
           const messageParts = [];
           let lastIndex = 0;
           let match;
-
+        
           while ((match = imageRegex.exec(messageObj.content)) !== null) {
             const imagePath = match[1] || match[3];
             const imageExtension = (match[2] || match[4]).toLowerCase();
-
+        
             if (imagePath && mimeTypes[imageExtension]) {
-              messageParts.push({ type: "text", text: messageObj.content.substring(lastIndex, match.index) });
+              messageParts.push({ 
+                type: "text", 
+                text: messageObj.content.substring(lastIndex, match.index) 
+              });
+              
               lastIndex = match.index + match[0].length;
-
+        
               try {
-                const normalizedPath = normalizePath(imagePath);
-                const imageBuffer = await app.vault.adapter.readBinary(normalizedPath);
-                const base64Image = Buffer.from(imageBuffer).toString('base64');
-
-                messageParts.push({
-                  type: "image_url",
-                  image_url: {
-                    url: `data:${mimeTypes[imageExtension]};base64,${base64Image}`
-                  }
-                });
+                const resolvedPath = await resolveImagePath(app, imagePath, view.file);
+                if (resolvedPath) {
+                  const imageBuffer = await app.vault.adapter.readBinary(resolvedPath);
+                  const base64Image = Buffer.from(imageBuffer).toString('base64');
+        
+                  messageParts.push({
+                    type: "image_url",
+                    image_url: {
+                      url: `data:${mimeTypes[imageExtension]};base64,${base64Image}`
+                    }
+                  });
+                }
               } catch (error) {
                 console.error(`Error processing image ${imagePath}:`, error);
               }
             }
           }
-
-          messageParts.push({ type: "text", text: messageObj.content.substring(lastIndex) });
-
+        
+          messageParts.push({ 
+            type: "text", 
+            text: messageObj.content.substring(lastIndex) 
+          });
+        
           return {
             role: messageObj.role,
-            content: messageParts.length > 1 ? messageParts : messageParts[0].text // 如果只有一个文本部分，则直接使用文本内容
+            content: messageParts.length > 1 ? messageParts : messageParts[0].text
           };
         }));
         // 新增代码结束
