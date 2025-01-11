@@ -1,6 +1,8 @@
 # 原项目 -->https://github.com/bramses/chatgpt-md<--
 # original project -->https://github.com/bramses/chatgpt-md<--
 
+
+！！！2025.1.11更新，修复无法正常识别图片在不同附件目录的问题。
 ---
 
 原项目半年没更新，并且不支持识图功能，我根据个人使用中觉得不便之处，对这个项目进行修改。
